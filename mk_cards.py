@@ -5,6 +5,7 @@ import random
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
+import json
 
 # Read API key from a file
 with open("openai_api_key.txt", "r") as file:
@@ -30,10 +31,11 @@ OUTPUT_DIR = "cards"
 def generate_card_text(card_type):
     prompt = (
         f"Generate a Magic: The Gathering {card_type} card with the following attributes: "
-        f"Name, Mana Cost, Type, and Abilities."
+        f"Name, Mana Cost, Type, Abilities, Power/Toughness (if applicable), Flavor Text, and Rarity. "
+        f"Please return the card details in JSON format."
     )
     response = openai.ChatCompletion.create(
-        model="gpt-4-turbo",  # Using gpt-4-turbo
+        model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that generates Magic: The Gathering cards."},
             {"role": "user", "content": prompt}
@@ -51,32 +53,11 @@ def generate_card_art(description):
     return dalle_response['data'][0]['url']
 
 def parse_card_text(card_text):
-    lines = card_text.split('\n')
-
-    # Initialize variables
-    name, mana_cost, type_line, abilities = "", "", "", ""
-
-    # Loop through lines and extract information based on keywords
-    for line in lines:
-        if "Name:" in line:
-            name = line.split(":", 1)[1].strip()
-        elif "Mana Cost:" in line:
-            mana_cost = line.split(":", 1)[1].strip()
-        elif "Type:" in line:
-            type_line = line.split(":", 1)[1].strip()
-        elif "Abilities:" in line:
-            abilities_start = line.split(":", 1)[1].strip()
-            abilities = abilities_start
-        else:
-            # Handle any lines that might continue the abilities text
-            if abilities:
-                abilities += f"\n{line.strip()}"
-
-    # Ensure all necessary components were found
-    if not name or not mana_cost or not type_line or not abilities:
-        raise ValueError("Failed to parse card text correctly. Please check the format of the AI output.")
-
-    return name, mana_cost, type_line, abilities
+    try:
+        card_data = json.loads(card_text)
+    except json.JSONDecodeError:
+        raise ValueError("Failed to parse card text as JSON. Please check the format of the AI output.")
+    return card_data
 
 def draw_title_and_type(draw, card_name, mana_cost, card_type):
     draw.text((MARGIN, MARGIN), card_name, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TITLE), fill="black")
@@ -90,10 +71,12 @@ def draw_abilities(draw, abilities, abilities_area):
         draw.text((abilities_area[0], y_text), line, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TEXT), fill="black")
         y_text += FONT_SIZE_TEXT + 5
 
-def create_template(card, draw, card_type, card_art, abilities):
+def create_template(card, draw, card_type, card_art, abilities, power_toughness="", flavor_text=""):
     if card_type == 'Creature':
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 512]
-        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 150, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN]
+        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 200, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN - 50]
+        power_toughness_area = [CARD_WIDTH - MARGIN - 100, CARD_HEIGHT - MARGIN - 150]
+        flavor_text_area = [MARGIN, CARD_HEIGHT - MARGIN - 100, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN - 50]
     elif card_type in ['Instant', 'Sorcery']:
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 400]
         abilities_area = art_area
@@ -119,17 +102,30 @@ def create_template(card, draw, card_type, card_art, abilities):
     draw.rectangle(art_area, outline="black", width=3)  # Art area
     draw_abilities(draw, abilities, abilities_area)
 
+    if power_toughness and card_type == 'Creature':
+        draw.text(power_toughness_area, power_toughness, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_PT), fill="black")
+    if flavor_text:
+        draw.text(flavor_text_area, flavor_text, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TEXT), fill="black", align="center")
+
 def generate_card():
     card_type = random.choice(CARD_TYPES)
     print(f"Generating a {card_type} card...")
 
-    # Generate card text using OpenAI
+    # Generate card text as JSON using OpenAI
     card_text = generate_card_text(card_type)
     print("Generated Card Text:")
     print(card_text)
 
-    # Parse the generated card text
-    card_name, mana_cost, type_line, abilities = parse_card_text(card_text)
+    # Parse the generated card text as JSON
+    card_data = parse_card_text(card_text)
+
+    # Extract card details from the parsed JSON
+    card_name = card_data["name"]
+    mana_cost = card_data["mana_cost"]
+    type_line = card_data["type_line"]
+    abilities = card_data["abilities"]
+    power_toughness = card_data.get("power_toughness", "")
+    flavor_text = card_data.get("flavor_text", "")
 
     # Generate card art using OpenAI DALL-E
     image_description = f"Artwork for a {card_type} Magic: The Gathering card based on the generated text"
@@ -137,15 +133,11 @@ def generate_card():
     print("Generated Card Art URL:")
     print(card_art_url)
 
-    # Create a blank card template
+    # Create a blank card template and render the card
     card = Image.new("RGBA", (CARD_WIDTH, CARD_HEIGHT), (255, 255, 255, 0))
     draw = ImageDraw.Draw(card)
-
-    # Draw the title and type box
     draw_title_and_type(draw, card_name, mana_cost, type_line)
-
-    # Use the create_template function to handle all card types
-    create_template(card, draw, card_type, card_art_url, abilities)
+    create_template(card, draw, card_type, card_art_url, abilities, power_toughness, flavor_text)
 
     # Ensure the output directory exists
     if not os.path.exists(OUTPUT_DIR):
