@@ -28,21 +28,47 @@ CARD_TYPES = ['Creature', 'Instant', 'Sorcery', 'Enchantment', 'Artifact', 'Plan
 # Directory to save cards
 OUTPUT_DIR = "cards"
 
+# Directory containing your background images
+ART_FRAMES_DIR = "art/frames"
+
 def generate_card_text(card_type):
     prompt = (
         f"Generate a Magic: The Gathering {card_type} card with the following attributes: "
         f"Name, Mana Cost, Type, Abilities, Power/Toughness (if applicable), Flavor Text, and Rarity. "
-        f"Please return the card details in JSON format."
+        f"Return the response as a JSON object with the following keys: "
+        f"'name', 'mana_cost', 'type', 'abilities', 'power_toughness', 'flavor_text', and 'rarity'. "
+        f"Ensure that the JSON keys are in lowercase."
     )
+
     response = openai.ChatCompletion.create(
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that generates Magic: The Gathering cards."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=200
+        max_tokens=300,
+        temperature=0.5
     )
-    return response['choices'][0]['message']['content']
+
+    card_text = response['choices'][0]['message']['content']
+
+    # Clean up the response by removing backticks and json formatting
+    card_text = card_text.strip()
+    if card_text.startswith("```json"):
+        card_text = card_text[7:]  # Remove ```json prefix
+    if card_text.endswith("```"):
+        card_text = card_text[:-3]  # Remove ``` suffix
+
+    try:
+        # Parse the cleaned JSON response
+        card_data = json.loads(card_text)
+        # Normalize keys to lowercase
+        card_data = {k.lower(): v for k, v in card_data.items()}
+    except json.JSONDecodeError as e:
+        print("JSONDecodeError:", e)
+        raise ValueError("Failed to parse card text as JSON. Please check the format of the AI output.")
+
+    return card_data
 
 def generate_card_art(description):
     dalle_response = openai.Image.create(
@@ -52,23 +78,9 @@ def generate_card_art(description):
     )
     return dalle_response['data'][0]['url']
 
-def parse_card_text(card_text):
-    # Clean up the card text to ensure it's valid JSON
-    card_text = card_text.strip()
-    if card_text.startswith("```json"):
-        card_text = card_text[7:]  # Remove ```json prefix
-    if card_text.endswith("```"):
-        card_text = card_text[:-3]  # Remove ``` suffix
-
-    try:
-        card_data = json.loads(card_text)
-    except json.JSONDecodeError:
-        raise ValueError("Failed to parse card text as JSON. Please check the format of the AI output.")
-    return card_data
-
 def draw_title_and_type(draw, card_name, mana_cost, card_type):
     draw.text((MARGIN, MARGIN), card_name, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TITLE), fill="black")
-    draw.text((CARD_WIDTH - MARGIN - 100, MARGIN), mana_cost, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TITLE), fill="black")
+    draw_mana_cost(draw, mana_cost, CARD_WIDTH - MARGIN - 200, MARGIN)
     draw.text((MARGIN, MARGIN + FONT_SIZE_TITLE + 30), card_type, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TEXT), fill="black")
 
 def draw_abilities(draw, abilities, abilities_area):
@@ -78,29 +90,48 @@ def draw_abilities(draw, abilities, abilities_area):
         draw.text((abilities_area[0], y_text), line, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TEXT), fill="black")
         y_text += FONT_SIZE_TEXT + 5
 
-def create_template(card, draw, card_type, card_art, abilities, power_toughness="", flavor_text=""):
+def draw_mana_cost(draw, mana_cost, x, y):
+    symbols = {
+        'W': 'W.png',  # White mana
+        'U': 'U.png',  # Blue mana
+        'B': 'B.png',  # Black mana
+        'R': 'R.png',  # Red mana
+        'G': 'G.png',  # Green mana
+        'C': 'C.png',  # Colorless mana
+        # Add paths for numbers as well, e.g., '1': '1.png', '2': '2.png', etc.
+    }
+    for symbol in mana_cost:
+        if symbol in symbols:
+            symbol_img = Image.open(os.path.join(ART_FRAMES_DIR, symbols[symbol]))
+            symbol_img = symbol_img.resize((40, 40))  # Adjust size as necessary
+            card.paste(symbol_img, (x, y), symbol_img)  # Paste symbol with transparency
+            x += 45  # Move x position for the next symbol
+
+def create_template(card, draw, card_type, card_art, abilities, power_toughness="", flavor_text="", mana_cost=""):
+    # Load and paste the appropriate background image
+    background = load_background_image(card_type, mana_cost)
+    card.paste(background, (0, 0))
+
+    # Default areas for common attributes
+    art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 512]
+    abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 200, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN - 50]
+    power_toughness_area = None
+    flavor_text_area = [MARGIN, CARD_HEIGHT - MARGIN - 100, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN - 50]
+
     if card_type == 'Creature':
-        art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 512]
-        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 200, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN - 50]
         power_toughness_area = [CARD_WIDTH - MARGIN - 100, CARD_HEIGHT - MARGIN - 150]
-        flavor_text_area = [MARGIN, CARD_HEIGHT - MARGIN - 100, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN - 50]
     elif card_type in ['Instant', 'Sorcery']:
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 400]
         abilities_area = art_area
+        flavor_text_area = None  # Usually no flavor text for these cards
     elif card_type == 'Enchantment':
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 400]
-        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 150, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN]
     elif card_type == 'Artifact':
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 450]
-        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 150, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN]
     elif card_type == 'Planeswalker':
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 512]
-        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 150, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN]
     elif card_type == 'Land':
         art_area = [MARGIN, MARGIN + 80, CARD_WIDTH - MARGIN, MARGIN + 80 + 512]
-        abilities_area = [MARGIN, CARD_HEIGHT - MARGIN - 150, CARD_WIDTH - MARGIN, CARD_HEIGHT - MARGIN]
-    else:
-        raise ValueError(f"Unknown card type: {card_type}")
 
     if card_art:
         art_image = Image.open(BytesIO(requests.get(card_art).content))
@@ -109,30 +140,55 @@ def create_template(card, draw, card_type, card_art, abilities, power_toughness=
     draw.rectangle(art_area, outline="black", width=3)  # Art area
     draw_abilities(draw, abilities, abilities_area)
 
-    if power_toughness and card_type == 'Creature':
+    if power_toughness and power_toughness_area:
         draw.text(power_toughness_area, power_toughness, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_PT), fill="black")
-    if flavor_text:
+    if flavor_text and flavor_text_area:
         draw.text(flavor_text_area, flavor_text, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TEXT), fill="black", align="center")
+
+def load_background_image(card_type, mana_cost):
+    if card_type == 'Land':
+        return Image.open(os.path.join(ART_FRAMES_DIR, 'land.png'))
+    elif card_type == 'Artifact':
+        return Image.open(os.path.join(ART_FRAMES_DIR, 'artifact.png'))
+    elif card_type == 'Creature':
+        # Determine color-specific background for creatures
+        color = determine_card_color(mana_cost)
+        return Image.open(os.path.join(ART_FRAMES_DIR, 'creature', f'{color}.png'))
+    else:
+        # Determine color-specific background for other card types
+        color = determine_card_color(mana_cost)
+        return Image.open(os.path.join(ART_FRAMES_DIR, f'{color}.png'))
+
+def determine_card_color(mana_cost):
+    if 'W' in mana_cost:
+        return "white"
+    elif 'U' in mana_cost:
+        return "blue"
+    elif 'B' in mana_cost:
+        return "black"
+    elif 'R' in mana_cost:
+        return "red"
+    elif 'G' in mana_cost:
+        return "green"
+    else:
+        return "artifact"  # Default for artifacts, lands, etc.
 
 def generate_card():
     card_type = random.choice(CARD_TYPES)
     print(f"Generating a {card_type} card...")
 
     # Generate card text as JSON using OpenAI
-    card_text = generate_card_text(card_type)
-    print("Generated Card Text:")
-    print(card_text)
-
-    # Parse the generated card text as JSON
-    card_data = parse_card_text(card_text)
+    card_data = generate_card_text(card_type)
+    print("Generated Card Data:")
+    print(json.dumps(card_data, indent=2))
 
     # Extract card details from the parsed JSON
     card_name = card_data["name"]
-    mana_cost = card_data["manaCost"]
+    mana_cost = card_data["mana_cost"]
     type_line = card_data["type"]
-    abilities = card_data["abilities"][0]["effect"]
-    flavor_text = card_data.get("flavorText", "")
-    power_toughness = card_data.get("powerToughness", "")
+    abilities = "\n".join(card_data["abilities"])
+    flavor_text = card_data.get("flavor_text", "")
+    power_toughness = card_data.get("power_toughness", "")
 
     # Generate card art using OpenAI DALL-E
     image_description = f"Artwork for a {card_type} Magic: The Gathering card based on the generated text"
@@ -143,8 +199,7 @@ def generate_card():
     # Create a blank card template and render the card
     card = Image.new("RGBA", (CARD_WIDTH, CARD_HEIGHT), (255, 255, 255, 0))
     draw = ImageDraw.Draw(card)
-    draw_title_and_type(draw, card_name, mana_cost, type_line)
-    create_template(card, draw, card_type, card_art_url, abilities, power_toughness, flavor_text)
+    create_template(card, draw, card_type, card_art_url, abilities, power_toughness, flavor_text, mana_cost)
 
     # Ensure the output directory exists
     if not os.path.exists(OUTPUT_DIR):
