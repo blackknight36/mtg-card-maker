@@ -53,6 +53,13 @@ def generate_card_art(description):
     return dalle_response['data'][0]['url']
 
 def parse_card_text(card_text):
+    # Clean up the card text to ensure it's valid JSON
+    card_text = card_text.strip()
+    if card_text.startswith("```json"):
+        card_text = card_text[7:]  # Remove ```json prefix
+    if card_text.endswith("```"):
+        card_text = card_text[:-3]  # Remove ``` suffix
+
     try:
         card_data = json.loads(card_text)
     except json.JSONDecodeError:
@@ -121,11 +128,11 @@ def generate_card():
 
     # Extract card details from the parsed JSON
     card_name = card_data["name"]
-    mana_cost = card_data["mana_cost"]
-    type_line = card_data["type_line"]
-    abilities = card_data["abilities"]
-    power_toughness = card_data.get("power_toughness", "")
-    flavor_text = card_data.get("flavor_text", "")
+    mana_cost = card_data["manaCost"]
+    type_line = card_data["type"]
+    abilities = card_data["abilities"][0]["effect"]
+    flavor_text = card_data.get("flavorText", "")
+    power_toughness = card_data.get("powerToughness", "")
 
     # Generate card art using OpenAI DALL-E
     image_description = f"Artwork for a {card_type} Magic: The Gathering card based on the generated text"
