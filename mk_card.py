@@ -89,7 +89,9 @@ def replace_mana_symbols(text, font_size):
 def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111, box_width=1272, box_height=96):
     font_size = FONT_SIZE_TITLE
     font = ImageFont.truetype(FONT_PATH, font_size)
-    max_width = box_width - 20  # Adjust for a small margin
+
+    # Calculate the maximum pixel width available for the title text
+    max_width = box_width - 10  # Adjust for a small margin
 
     # Draw the card name
     draw.text((x_offset, y_offset), card_name, font=font, fill="black")
@@ -106,7 +108,7 @@ def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111
     mana_y = y_offset + (box_height - mana_cost_height) // 2
 
     # Right-align the mana cost within the title box
-    mana_x = x_offset + max_width - mana_cost_width
+    mana_x = x_offset + box_width - mana_cost_width - 10  # Adjust to move further right
     draw_mana_cost(card, draw, mana_cost, mana_x, mana_y)
 
 # Draw the mana cost
@@ -129,34 +131,50 @@ def draw_card_type(draw, card_type, x_offset=147, y_offset=1197):
 
 # Draw the abilities text box
 def draw_card_abilities(card, draw, abilities, x=120, y=1323, box_width=1266, box_height=620, top_padding=20):
-    abilities_text = '\n'.join(abilities)
+    # Combine all abilities into a single string
+    abilities_text = ' '.join(abilities)  # Ensure there's a space between words
+
+    # Set initial font size and load the font
     font_size = FONT_SIZE_TEXT
     font = ImageFont.truetype(FONT_PATH, font_size)
+
+    # Replace mana symbols with images in the text
+    elements = replace_mana_symbols(abilities_text, font_size)
+
+    # Initialize position for drawing
+    current_y = y + top_padding
+    current_x = x
     max_width = box_width
 
-    # Adjust text wrapping logic to prevent breaking words and wrap within the defined box
-    wrapped_lines = []
-    current_line = ""
-
-    for word in abilities_text.split():
-        test_line = current_line + " " + word if current_line else word
-        if draw.textlength(test_line, font=font) <= max_width:
-            current_line = test_line
+    # Draw each element in the elements list
+    for element in elements:
+        if isinstance(element, Image.Image):
+            # If it's an image (mana symbol), paste it onto the card
+            if current_x + element.width > x + max_width:  # Check for wrapping
+                current_y += font_size + 10
+                current_x = x
+            card.paste(element, (int(current_x), int(current_y)), element)
+            current_x += element.width + 5  # Add some space after the symbol
         else:
-            wrapped_lines.append(current_line)
-            current_line = word
+            # Draw text and handle wrapping
+            words = element.split()
+            for word in words:
+                test_line = word if current_x == x else " " + word
+                line_width = draw.textlength(test_line, font=font)
 
-    # Add the last line
-    if current_line:
-        wrapped_lines.append(current_line)
+                if current_x + line_width > x + max_width:
+                    # Move to the next line if it exceeds max width
+                    current_y += font_size + 10
+                    current_x = x
+                    draw.text((current_x, current_y), word, font=font, fill="black")
+                    current_x += draw.textlength(word, font=font) + draw.textlength(" ", font=font)
+                else:
+                    draw.text((current_x, current_y), word, font=font, fill="black")
+                    current_x += draw.textlength(test_line, font=font) + draw.textlength(" ", font=font)
 
-    # Calculate the starting Y position for vertical centering
-    current_y = y + top_padding
-
-    # Draw each line of wrapped text
-    for line in wrapped_lines:
-        draw.text((x, current_y), line, font=font, fill="black")
-        current_y += font_size + 10
+    # Ensure the text fits within the specified box height
+    if current_y + font_size > y + box_height:
+        print("Warning: Text exceeds the allocated box height.")
 
 # Load the frame for the card based on type and color
 def load_frame_for_card_type(card_type, color):
@@ -171,7 +189,8 @@ def generate_card_text(card_type):
         f"Name, Mana Cost, Type, Abilities, Power/Toughness (if applicable), Flavor Text, Rarity, and Color. "
         f"Return the response as a JSON object with the following keys: "
         f"'name', 'mana_cost', 'type', 'abilities', 'power_toughness', 'flavor_text', 'rarity', and 'color'. "
-        f"Ensure that the JSON keys are in lowercase.  Colorless, non-artifact cards must return color as 'void'.  Artifact cards need to return color as 'artifact'.  Land cards should return color as 'Land'.  Mana costs must have symbols enclosed in curly braces."
+        f"Ensure that the JSON keys are in lowercase.  Colorless, non-artifact cards must return color as 'void'.  Artifact cards need to return color as 'artifact'.  Land cards should return color as 'land'.  Mana costs must have symbols enclosed in curly braces.  Multicolored cards should return color as 'multicolored'. "
+        f"Card names should be randomized with a large entropy pool. "
     )
 
     response = openai.ChatCompletion.create(
@@ -244,12 +263,12 @@ def create_template(card, draw, card_data, card_art):
 def generate_card():
     card_type = random.choice(CARD_TYPES)
     print(f"Generating a {card_type} card...")
-
     card_data = generate_card_text(card_type)
+
     print("Generated Card Data:")
     print(json.dumps(card_data, indent=2))
 
-    image_description = f"Artwork for a {card_type} Magic: The Gathering card based on the generated text"
+    image_description = f"Artwork for a {card_data['color']} {card_type} Magic: The Gathering card using the following rules text. {card_data['abilities']}"
     card_art_url = generate_card_art(image_description)
     print("Generated Card Art URL:")
     print(card_art_url)
