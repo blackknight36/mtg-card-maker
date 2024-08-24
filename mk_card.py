@@ -15,7 +15,6 @@ with open("openai_api_key.txt", "r") as file:
 # Define dimensions
 CARD_WIDTH = 1500
 CARD_HEIGHT = 2100
-MARGIN = 100
 
 # Font settings
 FONT_PATH = "/Users/michael.watters/Library/Fonts/Beleren2016-Bold.ttf"
@@ -90,25 +89,26 @@ def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111
     font_size = FONT_SIZE_TITLE
     font = ImageFont.truetype(FONT_PATH, font_size)
 
-    # Calculate the maximum pixel width available for the title text
-    max_width = box_width - 10  # Adjust for a small margin
+    # Calculate the width and height of the card name text
+    card_name_bbox = draw.textbbox((0, 0), card_name, font=font)
+    card_name_width = card_name_bbox[2] - card_name_bbox[0]
+    card_name_height = card_name_bbox[3] - card_name_bbox[1]
+
+    # Calculate the vertical position to center the card name
+    card_name_y = y_offset + (box_height - card_name_height) // 2
 
     # Draw the card name
-    draw.text((x_offset, y_offset), card_name, font=font, fill="black")
-
-    # Handle empty mana_cost gracefully
-    if not mana_cost:
-        return
+    draw.text((x_offset, card_name_y), card_name, font=font, fill="black")
 
     # Calculate the width of the mana cost string
-    mana_cost_width = sum([draw.textlength(symbol, font=font) for symbol in mana_cost])
+    mana_cost_width = sum([draw.textbbox((0, 0), symbol, font=font)[2] - draw.textbbox((0, 0), symbol, font=font)[0] for symbol in mana_cost])
 
     # Calculate the vertical position to center the mana cost
-    mana_cost_height = draw.textbbox((0, 0), mana_cost[0], font=font)[3] - draw.textbbox((0, 0), mana_cost[0], font=font)[1]
-    mana_y = y_offset + (box_height - mana_cost_height) // 2
+    mana_cost_height = card_name_height
+    mana_y = card_name_y
 
     # Right-align the mana cost within the title box
-    mana_x = x_offset + box_width - mana_cost_width - 10  # Adjust to move further right
+    mana_x = x_offset + box_width - mana_cost_width  # Align to the right edge
     draw_mana_cost(card, draw, mana_cost, mana_x, mana_y)
 
 # Draw the mana cost
@@ -131,50 +131,51 @@ def draw_card_type(draw, card_type, x_offset=147, y_offset=1197):
 
 # Draw the abilities text box
 def draw_card_abilities(card, draw, abilities, x=120, y=1323, box_width=1266, box_height=620, top_padding=20):
-    # Combine all abilities into a single string
-    abilities_text = ' '.join(abilities)  # Ensure there's a space between words
+    abilities_text = '\n'.join(abilities)
 
-    # Set initial font size and load the font
     font_size = FONT_SIZE_TEXT
     font = ImageFont.truetype(FONT_PATH, font_size)
 
-    # Replace mana symbols with images in the text
-    elements = replace_mana_symbols(abilities_text, font_size)
-
-    # Initialize position for drawing
-    current_y = y + top_padding
-    current_x = x
     max_width = box_width
 
-    # Draw each element in the elements list
-    for element in elements:
-        if isinstance(element, Image.Image):
-            # If it's an image (mana symbol), paste it onto the card
-            if current_x + element.width > x + max_width:  # Check for wrapping
-                current_y += font_size + 10
-                current_x = x
-            card.paste(element, (int(current_x), int(current_y)), element)
-            current_x += element.width + 5  # Add some space after the symbol
+    words = abilities_text.split()
+    wrapped_lines = []
+    current_line = ""
+
+    for word in words:
+        test_line = current_line + word if current_line == "" else current_line + " " + word
+        line_width = draw.textlength(test_line, font=font)
+        if line_width <= max_width:
+            current_line = test_line
         else:
-            # Draw text and handle wrapping
-            words = element.split()
-            for word in words:
-                test_line = word if current_x == x else " " + word
-                line_width = draw.textlength(test_line, font=font)
+            wrapped_lines.append(current_line)
+            current_line = word
 
-                if current_x + line_width > x + max_width:
-                    # Move to the next line if it exceeds max width
-                    current_y += font_size + 10
-                    current_x = x
-                    draw.text((current_x, current_y), word, font=font, fill="black")
-                    current_x += draw.textlength(word, font=font) + draw.textlength(" ", font=font)
-                else:
-                    draw.text((current_x, current_y), word, font=font, fill="black")
-                    current_x += draw.textlength(test_line, font=font) + draw.textlength(" ", font=font)
+    wrapped_lines.append(current_line)
 
-    # Ensure the text fits within the specified box height
-    if current_y + font_size > y + box_height:
-        print("Warning: Text exceeds the allocated box height.")
+    text_height = len(wrapped_lines) * (font_size + 10)
+
+    while text_height > box_height and font_size > 10:
+        font_size -= 2
+        font = ImageFont.truetype(FONT_PATH, font_size)
+        wrapped_lines = []
+        current_line = ""
+        for word in words:
+            test_line = current_line + word if current_line == "" else current_line + " " + word
+            line_width = draw.textlength(test_line, font=font)
+            if line_width <= max_width:
+                current_line = test_line
+            else:
+                wrapped_lines.append(current_line)
+                current_line = word
+
+        wrapped_lines.append(current_line)
+        text_height = len(wrapped_lines) * (font_size + 10)
+
+    current_y = y + top_padding
+    for line in wrapped_lines:
+        draw.text((x, current_y), line, font=font, fill="black")
+        current_y += font_size + 10
 
 # Load the frame for the card based on type and color
 def load_frame_for_card_type(card_type, color):
