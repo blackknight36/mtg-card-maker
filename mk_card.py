@@ -133,51 +133,39 @@ def draw_card_type(draw, card_type, x_offset=147, y_offset=1197):
 
 # Draw the abilities text box
 def draw_card_abilities(card, draw, abilities, x=120, y=1323, box_width=1266, box_height=620, top_padding=20):
-    abilities_text = '\n'.join(abilities)
-
     font_size = FONT_SIZE_TEXT
     font = ImageFont.truetype(FONT_PATH, font_size)
 
-    max_width = box_width
-
-    words = abilities_text.split()
-    wrapped_lines = []
-    current_line = ""
-
-    for word in words:
-        test_line = current_line + word if current_line == "" else current_line + " " + word
-        line_width = draw.textlength(test_line, font=font)
-        if line_width <= max_width:
-            current_line = test_line
-        else:
-            wrapped_lines.append(current_line)
-            current_line = word
-
-    wrapped_lines.append(current_line)
-
-    text_height = len(wrapped_lines) * (font_size + 10)
-
-    while text_height > box_height and font_size > 10:
-        font_size -= 2
-        font = ImageFont.truetype(FONT_PATH, font_size)
-        wrapped_lines = []
-        current_line = ""
-        for word in words:
-            test_line = current_line + word if current_line == "" else current_line + " " + word
-            line_width = draw.textlength(test_line, font=font)
-            if line_width <= max_width:
-                current_line = test_line
-            else:
-                wrapped_lines.append(current_line)
-                current_line = word
-
-        wrapped_lines.append(current_line)
-        text_height = len(wrapped_lines) * (font_size + 10)
+    max_width = box_width - 20  # Leave some padding
 
     current_y = y + top_padding
-    for line in wrapped_lines:
-        draw.text((x, current_y), line, font=font, fill="black")
+    current_x = x
+
+    for ability in abilities:
+        elements = replace_mana_symbols(ability, font_size)
+        for element in elements:
+            if isinstance(element, Image.Image):
+                if current_x + element.width > x + max_width:
+                    current_y += font_size + 10
+                    current_x = x
+                card.paste(element, (int(current_x), int(current_y)), element)
+                current_x += element.width
+            else:
+                for word in element.split():
+                    test_line = word if current_x == x else " " + word
+                    line_width = draw.textlength(test_line, font=font)
+
+                    if current_x + line_width > x + max_width:
+                        current_y += font_size + 10
+                        current_x = x
+                        draw.text((current_x, current_y), word, font=font, fill="black")
+                        current_x += draw.textlength(word, font=font) + draw.textlength(" ", font=font)
+                    else:
+                        draw.text((current_x, current_y), test_line, font=font, fill="black")
+                        current_x += line_width + draw.textlength(" ", font=font)
+
         current_y += font_size + 10
+        current_x = x
 
 # Load the frame for the card based on type and color
 def load_frame_for_card_type(card_type, color):
