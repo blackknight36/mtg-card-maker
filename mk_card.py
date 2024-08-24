@@ -15,10 +15,10 @@ with open("openai_api_key.txt", "r") as file:
 # Define dimensions
 CARD_WIDTH = 1500
 CARD_HEIGHT = 2100
+MARGIN = 100
 
 # Font settings
 FONT_PATH = "/Users/michael.watters/Library/Fonts/Beleren2016-Bold.ttf"
-FONT_SIZE_TITLE = 90
 FONT_SIZE_TEXT = 50
 FONT_SIZE_PT = 80
 FONT_SIZE_TYPE = 80
@@ -85,8 +85,10 @@ def replace_mana_symbols(text, font_size):
             elements.append(char)
     return elements
 
+# Draw the card title and mana cost
 def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111, box_width=1272, box_height=96):
-    font_size = FONT_SIZE_TITLE
+    # Determine the initial font size based on title length
+    font_size = min(90, int(box_width / (len(card_name) + len(mana_cost) / 2)))
     font = ImageFont.truetype(FONT_PATH, font_size)
 
     # Calculate the width and height of the card name text
@@ -113,7 +115,7 @@ def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111
 
 # Draw the mana cost
 def draw_mana_cost(card, draw, mana_cost, x, y):
-    font_size = FONT_SIZE_TITLE
+    font_size = FONT_SIZE_TEXT
     elements = replace_mana_symbols(mana_cost, font_size)
 
     for element in elements:
