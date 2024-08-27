@@ -36,54 +36,31 @@ CREATURE_FRAME_DIR = os.path.join(FRAME_DIR, "creature")
 # Directory where mana symbols are stored
 MANA_SYMBOLS_DIR = "cardImages/manaSymbols"
 
-# Load all mana symbols as PNG Image objects from SVGs
-def load_mana_symbol(symbol_name):
-    svg_path = os.path.join(MANA_SYMBOLS_DIR, f"{symbol_name}.svg")
-    png_data = cairosvg.svg2png(url=svg_path)
-    return Image.open(BytesIO(png_data))
-
+# Mapping of mana symbols to their Unicode equivalents
 mana_symbols = {
-    'T': load_mana_symbol('t'),
-    'W': load_mana_symbol('w'),
-    'U': load_mana_symbol('u'),
-    'B': load_mana_symbol('b'),
-    'R': load_mana_symbol('r'),
-    'G': load_mana_symbol('g'),
-    'C': load_mana_symbol('c'),
-    '1': load_mana_symbol('1'),
-    '2': load_mana_symbol('2'),
-    '3': load_mana_symbol('3'),
-    '4': load_mana_symbol('4'),
-    '5': load_mana_symbol('5'),
-    '6': load_mana_symbol('6'),
-    '7': load_mana_symbol('7'),
-    '8': load_mana_symbol('8'),
-    '9': load_mana_symbol('9'),
+    'T': '🗲',
+    'W': '⚪',
+    'U': '🔵',
+    'B': '⚫',
+    'R': '🔴',
+    'G': '🟢',
+    'C': '⚪',  # Generic mana symbol can be replaced with an appropriate symbol
+    '1': '1',
+    '2': '2',
+    '3': '3',
+    '4': '4',
+    '5': '5',
+    '6': '6',
+    '7': '7',
+    '8': '8',
+    '9': '9',
 }
 
-# Replace mana symbols in text with images
-def replace_mana_symbols(text, font_size):
-    elements = []
-    temp = ""
-    inside_braces = False
-
-    for char in text:
-        if char == "{":
-            inside_braces = True
-            temp = ""
-        elif char == "}":
-            inside_braces = False
-            symbol_image = mana_symbols.get(temp.upper())
-            if symbol_image:
-                symbol_image = symbol_image.resize((font_size, font_size), Image.LANCZOS)
-                elements.append(symbol_image)
-            else:
-                elements.append(f"{{{temp}}}")  # Fallback to text if symbol not found
-        elif inside_braces:
-            temp += char
-        else:
-            elements.append(char)
-    return elements
+# Replace mana symbols in text with Unicode characters
+def replace_mana_symbols(text):
+    for symbol, unicode_char in mana_symbols.items():
+        text = text.replace(f"{{{symbol}}}", unicode_char)
+    return text
 
 # Draw the card title and mana cost
 def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111, box_width=1272, box_height=96):
@@ -102,6 +79,9 @@ def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111
     # Draw the card name
     draw.text((x_offset, card_name_y), card_name, font=font, fill="black")
 
+    # Replace mana symbols with Unicode characters in mana_cost
+    mana_cost = replace_mana_symbols(mana_cost)
+
     # Calculate the width of the mana cost string
     mana_cost_width = sum([draw.textbbox((0, 0), symbol, font=font)[2] - draw.textbbox((0, 0), symbol, font=font)[0] for symbol in mana_cost])
 
@@ -111,61 +91,61 @@ def draw_card_title(card, draw, card_name, mana_cost, x_offset=120, y_offset=111
 
     # Right-align the mana cost within the title box
     mana_x = x_offset + box_width - mana_cost_width  # Align to the right edge
-    draw_mana_cost(card, draw, mana_cost, mana_x, mana_y)
-
-# Draw the mana cost
-def draw_mana_cost(card, draw, mana_cost, x, y):
-    font_size = FONT_SIZE_TEXT
-    elements = replace_mana_symbols(mana_cost, font_size)
-
-    for element in elements:
-        if isinstance(element, Image.Image):
-            card.paste(element, (int(x), int(y)), element)
-            x += element.width
-        else:
-            draw.text((x, y), element, font=ImageFont.truetype(FONT_PATH, font_size), fill="black")
-            x += draw.textlength(element, font=ImageFont.truetype(FONT_PATH, font_size))
+    draw.text((mana_x, mana_y), mana_cost, font=font, fill="black")
 
 # Draw the card type
 def draw_card_type(draw, card_type, x_offset=147, y_offset=1197):
     type_area = [x_offset, y_offset, CARD_WIDTH - x_offset, 1330]
     draw.text((type_area[0], type_area[1]), card_type, font=ImageFont.truetype(FONT_PATH, FONT_SIZE_TYPE), fill="black")
 
-# Draw the abilities text box
+# Update the draw_card_abilities function to directly render the text with Unicode mana symbols
 def draw_card_abilities(card, draw, abilities, x=120, y=1323, box_width=1266, box_height=620, top_padding=20):
+    abilities_text = '\n'.join(abilities)
+    abilities_text = replace_mana_symbols(abilities_text)
+
     font_size = FONT_SIZE_TEXT
     font = ImageFont.truetype(FONT_PATH, font_size)
 
-    max_width = box_width - 20  # Leave some padding
+    max_width = box_width
+
+    words = abilities_text.split()
+    wrapped_lines = []
+    current_line = ""
+
+    for word in words:
+        test_line = current_line + word if current_line == "" else current_line + " " + word
+        line_width = draw.textlength(test_line, font=font)
+        if line_width <= max_width:
+            current_line = test_line
+        else:
+            wrapped_lines.append(current_line)
+            current_line = word
+
+    wrapped_lines.append(current_line)
+
+    text_height = len(wrapped_lines) * (font_size + 10)
+
+    while text_height > box_height and font_size > 10:
+        font_size -= 2
+        font = ImageFont.truetype(FONT_PATH, font_size)
+        wrapped_lines = []
+        current_line = ""
+        for word in words:
+            test_line = current_line + word if current_line == "" else current_line + " " + word
+            line_width = draw.textlength(test_line, font=font)
+            if line_width <= max_width:
+                current_line = test_line
+            else:
+                wrapped_lines.append(current_line)
+                current_line = word
+
+        wrapped_lines.append(current_line)
+        text_height = len(wrapped_lines) * (font_size + 10)
 
     current_y = y + top_padding
-    current_x = x
-
-    for ability in abilities:
-        elements = replace_mana_symbols(ability, font_size)
-        for element in elements:
-            if isinstance(element, Image.Image):
-                if current_x + element.width > x + max_width:
-                    current_y += font_size + 10
-                    current_x = x
-                card.paste(element, (int(current_x), int(current_y)), element)
-                current_x += element.width
-            else:
-                for word in element.split():
-                    test_line = word if current_x == x else " " + word
-                    line_width = draw.textlength(test_line, font=font)
-
-                    if current_x + line_width > x + max_width:
-                        current_y += font_size + 10
-                        current_x = x
-                        draw.text((current_x, current_y), word, font=font, fill="black")
-                        current_x += draw.textlength(word, font=font) + draw.textlength(" ", font=font)
-                    else:
-                        draw.text((current_x, current_y), test_line, font=font, fill="black")
-                        current_x += line_width + draw.textlength(" ", font=font)
-
+    for line in wrapped_lines:
+        draw.text((x, current_y), line, font=font, fill="black")
         current_y += font_size + 10
-        current_x = x
 
 # Load the frame for the card based on type and color
 def load_frame_for_card_type(card_type, color):
