@@ -38,7 +38,7 @@ MANA_SYMBOLS_DIR = "cardImages/manaSymbols"
 
 # Mapping of mana symbols to their Unicode equivalents
 mana_symbols = {
-    'T': '🗲',
+    'T': '↻',
     'W': '⚪',
     'U': '🔵',
     'B': '⚫',
