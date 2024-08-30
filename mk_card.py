@@ -36,15 +36,15 @@ CREATURE_FRAME_DIR = os.path.join(FRAME_DIR, "creature")
 # Directory where mana symbols are stored
 MANA_SYMBOLS_DIR = "cardImages/manaSymbols"
 
-# Mapping of mana symbols to their Unicode equivalents
+# Mapping of mana symbols to simpler text representations
 mana_symbols = {
-    'T': '↻',
-    'W': '⚪',
-    'U': '🔵',
-    'B': '⚫',
-    'R': '🔴',
-    'G': '🟢',
-    'C': '⚪',  # Generic mana symbol can be replaced with an appropriate symbol
+    'T': 'T',  # Use 'T' for the tap symbol
+    'W': 'W',  # White mana
+    'U': 'U',  # Blue mana
+    'B': 'B',  # Black mana
+    'R': 'R',  # Red mana
+    'G': 'G',  # Green mana
+    'C': 'C',  # Colorless mana
     '1': '1',
     '2': '2',
     '3': '3',
